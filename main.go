@@ -14,17 +14,47 @@ func handleRequests() {
 
 	myRouter.HandleFunc("/", returnAllRecords)
 	myRouter.HandleFunc("/record", createNewRecord).Methods("POST")
+	myRouter.HandleFunc("/v1/{id}", deleteRecord).Methods("DELETE")
+	myRouter.HandleFunc("/v1/{id}", getSpecificRecord)
 
 	log.Fatal(http.ListenAndServe(":3000", myRouter))
 }
 
 type Record struct {
-	Id   int    `json:"id"`
-	Name string `json:"name"`
-	Age  int    `json:"age"`
+	Id          string      `json:"id"`
+	Name        string      `json:"name"`
+	Age         int         `json:"age"`
+	Description interface{} `json:"description"`
 }
 
 var Records []Record
+
+func getSpecificRecord(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	key := vars["id"]
+
+	for _, record := range Records {
+		if record.Id == key {
+			json.NewEncoder(w).Encode(record)
+			fmt.Println("HTTP Response Status:", 200, http.StatusText(200))
+		} else {
+			http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
+		}
+	}
+}
+
+func deleteRecord(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	id := vars["id"]
+	fmt.Println("Endpoint Hit: deleteRecord")
+	for index, record := range Records {
+		if record.Id == id {
+			Records = append(Records[:index], Records[index+1:]...)
+		} else {
+			http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
+		}
+	}
+}
 
 func returnAllRecords(w http.ResponseWriter, r *http.Request) {
 	fmt.Println("Endpoint Hit: returnAllRecords")
