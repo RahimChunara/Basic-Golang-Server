@@ -14,6 +14,7 @@ func handleRequests() {
 
 	myRouter.HandleFunc("/", returnAllRecords)
 	myRouter.HandleFunc("/record", createNewRecord).Methods("POST")
+	// myRouter.HandleFunc("/record", updateRecord).Methods("PUT")
 	myRouter.HandleFunc("/v1/{id}", deleteRecord).Methods("DELETE")
 	myRouter.HandleFunc("/v1/{id}", getSpecificRecord)
 
@@ -28,6 +29,9 @@ type Record struct {
 }
 
 var Records []Record
+var found int = 0
+var deleted int = 0
+var createFound int = 0
 
 func getSpecificRecord(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
@@ -35,12 +39,20 @@ func getSpecificRecord(w http.ResponseWriter, r *http.Request) {
 
 	for _, record := range Records {
 		if record.Id == key {
-			json.NewEncoder(w).Encode(record)
-			fmt.Println("HTTP Response Status:", 200, http.StatusText(200))
-		} else {
-			http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
+			found = 1
+			err := json.NewEncoder(w).Encode(record)
+			if err != nil {
+				fmt.Println("Error")
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
 		}
 	}
+	if found == 0 {
+		fmt.Println("Throw Error")
+		w.WriteHeader(404)
+	}
+	found = 0
 }
 
 func deleteRecord(w http.ResponseWriter, r *http.Request) {
@@ -50,8 +62,7 @@ func deleteRecord(w http.ResponseWriter, r *http.Request) {
 	for index, record := range Records {
 		if record.Id == id {
 			Records = append(Records[:index], Records[index+1:]...)
-		} else {
-			http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
+			w.WriteHeader(200)
 		}
 	}
 }
@@ -69,18 +80,16 @@ func createNewRecord(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-
 	for i, s := range Records {
 		if s.Id == newRecord.Id {
+			createFound = 1
 			Records[i] = newRecord
-			break
-		} else {
-			Records = append(Records, newRecord)
 		}
 	}
-	if len(Records) == 0 {
+	if createFound == 0 {
 		Records = append(Records, newRecord)
 	}
+	createFound = 0
 }
 
 func main() {
