@@ -3,10 +3,15 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
+	"io/ioutil"
 	"log"
 	"net/http"
+	"path"
+	"text/template"
 
 	"github.com/gorilla/mux"
+	"golang.org/x/net/websocket"
 )
 
 func handleRequests() {
@@ -14,13 +19,17 @@ func handleRequests() {
 
 	myRouter.HandleFunc("/", returnAllRecords)
 	myRouter.HandleFunc("/record", createNewRecord).Methods("POST")
-	// myRouter.HandleFunc("/record", updateRecord).Methods("PUT")
 	myRouter.HandleFunc("/v1/{id}", deleteRecord).Methods("DELETE")
-	myRouter.HandleFunc("/v1/{id}", getSpecificRecord)
+	myRouter.Handle("/w1", websocket.Handler(Server))
+	myRouter.HandleFunc("/x1", serveStatic)
+	myRouter.HandleFunc("/v1", getSpecificRecord)
+	myRouter.HandleFunc("/v1/random", randomImage)
 
 	log.Fatal(http.ListenAndServe(":3000", myRouter))
+
 }
 
+// Stores All Records
 type Record struct {
 	Id          string      `json:"id"`
 	Name        string      `json:"name"`
@@ -29,30 +38,47 @@ type Record struct {
 }
 
 var Records []Record
+
+// Values to keep track
 var found int = 0
 var deleted int = 0
 var createFound int = 0
 
-func getSpecificRecord(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	key := vars["id"]
+// Render HTML Doc
+func serveStatic(w http.ResponseWriter, r *http.Request) {
+	fmt.Println("Endpoint Hit: html")
+	fp := path.Join("templates", "client.html")
+	t, err := template.ParseFiles(fp)
+	if err != nil {
+		fmt.Println(err)
+	}
+	t.Execute(w, nil)
+}
 
-	for _, record := range Records {
-		if record.Id == key {
-			found = 1
-			err := json.NewEncoder(w).Encode(record)
-			if err != nil {
-				fmt.Println("Error")
-				http.Error(w, err.Error(), http.StatusBadRequest)
-				return
+// Get Specific Record, if none return all
+func getSpecificRecord(w http.ResponseWriter, r *http.Request) {
+	fmt.Println("query params:", r.URL.Query())
+	id := r.URL.Query().Get("id")
+	if id != "" {
+		for _, record := range Records {
+			if record.Id == id {
+				found = 1
+				err := json.NewEncoder(w).Encode(record)
+				if err != nil {
+					fmt.Println("Error")
+					http.Error(w, err.Error(), http.StatusBadRequest)
+					return
+				}
 			}
 		}
+		if found == 0 {
+			fmt.Println("Throw Error")
+			w.WriteHeader(404)
+		}
+		found = 0
+	} else {
+		json.NewEncoder(w).Encode(Records)
 	}
-	if found == 0 {
-		fmt.Println("Throw Error")
-		w.WriteHeader(404)
-	}
-	found = 0
 }
 
 func deleteRecord(w http.ResponseWriter, r *http.Request) {
@@ -72,6 +98,7 @@ func returnAllRecords(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(Records)
 }
 
+// Create New Record, also updates record if same if
 func createNewRecord(w http.ResponseWriter, r *http.Request) {
 	var newRecord Record
 
@@ -90,6 +117,68 @@ func createNewRecord(w http.ResponseWriter, r *http.Request) {
 		Records = append(Records, newRecord)
 	}
 	createFound = 0
+}
+
+// Echo Server
+func Server(ws *websocket.Conn) {
+	fmt.Println("Endpoint Hit: Echo Server")
+	var err error
+
+	for {
+		var reply string
+
+		if err = websocket.Message.Receive(ws, &reply); err != nil {
+			fmt.Println("Can't receive")
+			break
+		}
+
+		fmt.Println("Received back from client: " + reply)
+
+		msg := "Received:  " + reply
+		fmt.Println("Sending to client: " + msg)
+
+		if err = websocket.Message.Send(ws, msg); err != nil {
+			fmt.Println("Can't send")
+			break
+		}
+	}
+}
+
+// Unmarsha; Json to this struct
+type Response struct {
+	Message string `json:"message"`
+	Status  string `json:"status"`
+}
+
+var client = http.Client{}
+
+// Fetches Random image from the api and displays it on client
+func randomImage(w http.ResponseWriter, r *http.Request) {
+	resp, err := http.Get("https://dog.ceo/api/breeds/image/random")
+	if err != nil {
+		log.Fatalln(err)
+	}
+
+	// defer resp.Body.Close()
+
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		log.Fatalln(err)
+	}
+
+	var responseObject Response
+	json.Unmarshal(body, &responseObject)
+
+	reqImg, err := client.Get(responseObject.Message)
+	if err != nil {
+		log.Fatalln(err)
+	}
+
+	defer reqImg.Body.Close()
+
+	if _, err = io.Copy(w, reqImg.Body); err != nil {
+		log.Fatalln(err)
+	}
 }
 
 func main() {

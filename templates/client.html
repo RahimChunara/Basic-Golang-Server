@@ -1,0 +1,29 @@
+<html>
+<head></head>
+<body>
+    <script type="text/javascript">
+        var sock = null;
+        var wsuri = "ws://127.0.0.1:3000/w1";
+
+        window.onload = function() {
+            sock = new WebSocket(wsuri);
+
+            sock.onmessage = function(e) {
+                console.log("message received: " + e.data);
+            }
+        };
+
+        function send() {
+            var msg = document.getElementById('message').value;
+            sock.send(msg);
+        };
+    </script>
+    <h1>WebSocket Echo Server</h1>
+    <form>
+        <p>
+            Msg: <input id="message" type="text" value="Loren Epsum">
+        </p>
+    </form>
+    <button onclick="send();">send msg</button>
+</body>
+</html>
