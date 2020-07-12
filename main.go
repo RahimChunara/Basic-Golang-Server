@@ -25,7 +25,7 @@ func handleRequests() {
 	myRouter.HandleFunc("/v1", getSpecificRecord)
 	myRouter.HandleFunc("/v1/random", randomImage)
 
-	log.Fatal(http.ListenAndServe(":3000", myRouter))
+	log.Fatal(http.ListenAndServe(":3001", myRouter))
 
 }
 
