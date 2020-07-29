@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -10,9 +11,15 @@ import (
 	"path"
 	"text/template"
 
+	"github.com/go-redis/redis/v8"
 	"github.com/gorilla/mux"
 	"golang.org/x/net/websocket"
 )
+
+// Redis Client
+var rdb = redis.NewClient(&redis.Options{
+	Addr: "localhost:6379",
+})
 
 func handleRequests() {
 	myRouter := mux.NewRouter().StrictSlash(true)
@@ -29,6 +36,8 @@ func handleRequests() {
 
 }
 
+var ctx = context.Background()
+
 // Stores All Records
 type Record struct {
 	Id          string      `json:"id"`
@@ -38,11 +47,6 @@ type Record struct {
 }
 
 var Records []Record
-
-// Values to keep track
-var found int = 0
-var deleted int = 0
-var createFound int = 0
 
 // Render HTML Doc
 func serveStatic(w http.ResponseWriter, r *http.Request) {
@@ -57,66 +61,60 @@ func serveStatic(w http.ResponseWriter, r *http.Request) {
 
 // Get Specific Record, if none return all
 func getSpecificRecord(w http.ResponseWriter, r *http.Request) {
+	fmt.Printf("ojmefrooegrwfnjm")
 	fmt.Println("query params:", r.URL.Query())
 	id := r.URL.Query().Get("id")
-	if id != "" {
-		for _, record := range Records {
-			if record.Id == id {
-				found = 1
-				err := json.NewEncoder(w).Encode(record)
-				if err != nil {
-					fmt.Println("Error")
-					http.Error(w, err.Error(), http.StatusBadRequest)
-					return
-				}
-			}
-		}
-		if found == 0 {
-			fmt.Println("Throw Error")
-			w.WriteHeader(404)
-		}
-		found = 0
+
+	val, err := rdb.HGet(ctx, "AllRecords", "id:"+id).Result()
+	if err != nil {
+		fmt.Println("Throw Error")
+		w.WriteHeader(404)
 	} else {
-		json.NewEncoder(w).Encode(Records)
+		json.NewEncoder(w).Encode(val)
 	}
+
 }
 
 func deleteRecord(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	id := vars["id"]
 	fmt.Println("Endpoint Hit: deleteRecord")
-	for index, record := range Records {
-		if record.Id == id {
-			Records = append(Records[:index], Records[index+1:]...)
-			w.WriteHeader(200)
-		}
+	val := rdb.HDel(ctx, "AllRecords", "id:"+id).Val()
+	if val == 0 {
+		w.WriteHeader(404)
 	}
 }
 
 func returnAllRecords(w http.ResponseWriter, r *http.Request) {
 	fmt.Println("Endpoint Hit: returnAllRecords")
-	json.NewEncoder(w).Encode(Records)
+	val := rdb.HGetAll(ctx, "AllRecords").Val()
+	json.NewEncoder(w).Encode(val)
+	fmt.Print(val)
 }
 
 // Create New Record, also updates record if same if
 func createNewRecord(w http.ResponseWriter, r *http.Request) {
 	var newRecord Record
+	const Record string = "Record:"
 
+	fmt.Println("Endpoint Hit: Create new record")
 	err := json.NewDecoder(r.Body).Decode(&newRecord)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	for i, s := range Records {
-		if s.Id == newRecord.Id {
-			createFound = 1
-			Records[i] = newRecord
-		}
+	fmt.Print(newRecord)
+
+	b, err := json.Marshal(newRecord)
+	if err != nil {
+		return
 	}
-	if createFound == 0 {
-		Records = append(Records, newRecord)
+
+	er := rdb.HSet(ctx, "AllRecords", "id:"+newRecord.Id, b).Err()
+	if er != nil {
+		panic(err)
 	}
-	createFound = 0
+
 }
 
 // Echo Server
@@ -159,7 +157,7 @@ func randomImage(w http.ResponseWriter, r *http.Request) {
 		log.Fatalln(err)
 	}
 
-	// defer resp.Body.Close()
+	defer resp.Body.Close()
 
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
